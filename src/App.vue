@@ -12,7 +12,7 @@ const isChatOpen = ref(false);
 const inputText = ref('');
 const messages = ref([]);
 const senderId = ref('user_' + Math.random().toString(36).substr(2, 9));
-const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
+const RASA_API_URL = '/webhooks/rest/webhook';
 const chatHistory = ref(null);
 
 // --- FUNCIONES DEL CHAT ---
