@@ -12,7 +12,9 @@ const isChatOpen = ref(false);
 const inputText = ref('');
 const messages = ref([]);
 const senderId = ref('user_' + Math.random().toString(36).substr(2, 9));
-const RASA_API_URL = '/webhooks/rest/webhook';
+const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
+
+//const RASA_API_URL = '/webhooks/rest/webhook';
 const chatHistory = ref(null);
 
 // --- FUNCIONES DEL CHAT ---
@@ -114,6 +116,28 @@ const handleFileUpload = (event) => {
   }
 };
 
+// ======================================================
+// MODIFICACIÓN 1: Función para formatear Markdown
+// ======================================================
+const formatMessage = (text) => {
+  if (!text) return '';
+  
+  // 1. Reemplaza \n (nuevas líneas de Rasa) con <br> (saltos de línea HTML)
+  let formattedText = text.replace(/\n/g, '<br>');
+
+  // 2. Reemplaza **negrita** con <strong>negrita</strong>
+  formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // 3. Reemplaza [texto](link) con <a href="link" target="_blank">texto</a>
+  // target="_blank" abre el link en una nueva pestaña
+  formattedText = formattedText.replace(
+    /\[(.*?)\]\((.*?)\)/g, 
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
+  
+  return formattedText;
+};
+
 // Auto-scroll al fondo del chat cuando llegan mensajes nuevos
 watch(messages, async () => {
   await nextTick();
@@ -125,13 +149,16 @@ watch(messages, async () => {
 
 <template>
   <div>
-    <!-- Ventana de chat flotante --><transition name="chat-slide">
+    <!-- Ventana de chat flotante -->
+    <transition name="chat-slide">
       <div v-if="isChatOpen" class="chat-widget">
         
-        <!-- Header del chat --><div class="chat-header">
+        <!-- Header del chat -->
+        <div class="chat-header">
           <div class="header-content">
             <div class="bot-avatar-small">
-              <!-- CORRECCIÓN: Usar el logo de la empresa aquí --><img :src="dtfLogoUrl" alt="DTF Logo" class="header-dtf-logo" />
+              <!-- CORRECCIÓN: Usar el logo de la empresa aquí -->
+              <img :src="dtfLogoUrl" alt="DTF Logo" class="header-dtf-logo" />
             </div>
             <div class="bot-info">
               <h3>DTF Assistant</h3>
@@ -149,31 +176,40 @@ watch(messages, async () => {
           </button>
         </div>
 
-        <!-- Historial de mensajes --><div class="chat-history" ref="chatHistory">
+        <!-- Historial de mensajes -->
+        <div class="chat-history" ref="chatHistory">
           <div class="messages-container">
             <div v-for="(msg, index) in messages" :key="index" :class="['message-wrapper', msg.from]">
               
-              <!-- Avatar del bot --><div v-if="msg.from === 'bot'" class="message-avatar">
-                <!-- CORRECCIÓN: Usar el logo de la empresa aquí --><img :src="dtfLogoUrl" alt="Bot" class="message-dtf-logo" />
+              <!-- Avatar del bot -->
+              <div v-if="msg.from === 'bot'" class="message-avatar">
+                <!-- CORRECCIÓN: Usar el logo de la empresa aquí -->
+                <img :src="dtfLogoUrl" alt="Bot" class="message-dtf-logo" />
               </div>
 
               <div class="message-content">
-                <!-- Mensaje de texto normal --><div v-if="msg.type === 'text'" class="message-bubble">
-                  <p>{{ msg.text }}</p>
+                
+                <!-- Mensaje de texto normal -->
+                <div v-if="msg.type === 'text'" class="message-bubble">
+                  <!-- 
+                    ======================================================
+                    MODIFICACIÓN 2: AQUÍ ESTÁ LA CORRECCIÓN DE MARKDOWN (v-html)
+                    ======================================================
+                  -->
+                  <p v-html="formatMessage(msg.text)"></p>
                 </div>
 
-                <!-- Indicador de "escribiendo..." --><div v-if="msg.type === 'typing'" class="message-bubble typing-bubble">
+                <!-- Indicador de "escribiendo..." -->
+                <div v-if="msg.type === 'typing'" class="message-bubble typing-bubble">
                   <div class="typing-indicator">
                     <span></span><span></span><span></span>
                   </div>
                 </div>
 
-                <!-- Mensajes custom (botones, etc.) --><div v-if="msg.type === 'custom'" class="message-bubble">
+                <!-- Mensajes custom (botones, etc.) -->
+                <div v-if="msg.type === 'custom'" class="message-bubble">
                   <p v-if="msg.custom.text">{{ msg.custom.text }}</p>
                   
-                  <!-- ====================================================== -->
-                  <!-- AQUÍ ESTÁ LA CORRECCIÓN APLICADA -->
-                  <!-- ====================================================== -->
                   <div v-if="msg.custom.type === 'buttons'" class="button-container">
                     <button 
                       v-for="option in msg.custom.options" 
@@ -183,11 +219,9 @@ watch(messages, async () => {
                       {{ option.title }}
                     </button>
                   </div>
-                  <!-- ====================================================== -->
-                  <!-- FIN DE LA CORRECCIÓN -->
-                  <!-- ====================================================== -->
 
-                  <!-- Upload de archivo --><div v-if="msg.custom.type === 'request_upload'" class="upload-container">
+                  <!-- Upload de archivo -->
+                  <div v-if="msg.custom.type === 'request_upload'" class="upload-container">
                     <label class="upload-label">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -208,7 +242,8 @@ watch(messages, async () => {
           </div>
         </div>
 
-        <!-- Input de mensajes --><div class="chat-input-container">
+        <!-- Input de mensajes -->
+        <div class="chat-input-container">
           <div class="chat-input">
             <button class="icon-btn attachment-btn" title="Attach file">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -234,10 +269,12 @@ watch(messages, async () => {
       </div>
     </transition>
 
-    <!-- Botón flotante (FAB) --><transition name="fab-bounce">
+    <!-- Botón flotante (FAB) -->
+    <transition name="fab-bounce">
       <button v-if="!isChatOpen" @click="openChat" class="chat-bubble">
         <div class="fab-content">
-          <!-- Este es el icono de mensaje, NO el logo de tu empresa --><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="fab-chat-icon">
+          <!-- Este es el icono de mensaje, NO el logo de tu empresa -->
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="fab-chat-icon">
             <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"></path>
           </svg>
           <div class="notification-badge">1</div>
@@ -737,6 +774,12 @@ body {
   line-height: 1.6;
   font-size: 15px;
   font-weight: 500;
+  
+  /* ====================================================== */
+  /* MODIFICACIÓN 3 (PARTE 1): Propiedades añadidas para Markdown */
+  /* ====================================================== */
+  white-space: pre-wrap; /* Esto permite que los <br> que añadimos funcionen */
+  word-wrap: break-word; /* Asegura que no se rompa el layout */
 }
 
 .message-time {
@@ -1001,5 +1044,30 @@ body {
   .chat-header {
     border-radius: 0;
   }
+}
+
+/* ============================================
+   MODIFICACIÓN 3 (PARTE 2): CORRECCIÓN PARA MARKDOWN Y LINKS
+   ============================================ */
+
+/* Estilos para el texto en negrita (<strong>) */
+.message-bubble p strong {
+  font-weight: 700;
+}
+
+/* Estilos para los links (<a>) */
+.message-bubble p a {
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+/* Links en las burbujas del bot (azules) */
+.message-wrapper.bot .message-bubble p a {
+  color: #2563eb; 
+}
+
+/* Links en las burbujas del usuario (blancos) */
+.message-wrapper.user .message-bubble p a {
+  color: #ffffff;
 }
 </style>
