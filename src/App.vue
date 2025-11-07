@@ -53,14 +53,19 @@ const closeChat = () => {
 };
 
 const sendMessage = async (payload = null) => {
-  // Si 'payload' existe, es un clic de botón. Si no, es texto.
+  // Si 'payload' existe, es un clic de botón o un dropdown. Si no, es texto.
   const messageToSend = payload || inputText.value.trim();
+  // Evita enviar si está vacío (ej. el "Select a size..." del dropdown)
   if (!messageToSend) return;
 
   // 1. Añade el mensaje del usuario al chat
   if (!payload) {
     messages.value.push({ from: 'user', type: 'text', text: messageToSend });
     inputText.value = ''; // Limpia el input
+  } else if (payload && event && event.target && event.target.tagName === 'SELECT') {
+    // Si es un dropdown, muestra la selección como un mensaje de usuario
+    const selectedText = event.target.options[event.target.selectedIndex].text;
+    messages.value.push({ from: 'user', type: 'text', text: selectedText });
   }
 
   // 2. Muestra "escribiendo..."
@@ -82,6 +87,7 @@ const sendMessage = async (payload = null) => {
     } else {
       response.data.forEach((botMessage) => {
         if (botMessage.custom) {
+          // Manejo de 'custom' (que puede ser dropdown, grid, etc.)
           messages.value.push({ from: 'bot', type: 'custom', custom: botMessage.custom });
         } else if (botMessage.buttons) {
           // Manejo de botones de Rasa (que ahora vienen como `botMessage.buttons`)
@@ -210,6 +216,7 @@ watch(messages, async () => {
                 <div v-if="msg.type === 'custom'" class="message-bubble">
                   <p v-if="msg.custom.text">{{ msg.custom.text }}</p>
                   
+                  <!-- Contenedor de Botones (Ahora con scroll horizontal) -->
                   <div v-if="msg.custom.type === 'buttons'" class="button-container">
                     <button 
                       v-for="option in msg.custom.options" 
@@ -218,6 +225,32 @@ watch(messages, async () => {
                       class="option-btn">
                       {{ option.title }}
                     </button>
+                  </div>
+
+                  <!-- ===== INICIO DE LA MODIFICACIÓN (Paso 2) ===== -->
+                  <!-- Nuevo Contenedor de Grid -->
+                  <div v-else-if="msg.custom.type === 'grid'" class="grid-container">
+                    <button 
+                      v-for="option in msg.custom.options" 
+                      :key="option.title"
+                      @click="sendMessage(option.payload)"
+                      class="grid-btn"> {{ option.title }}
+                    </button>
+                  </div>
+                  <!-- ===== FIN DE LA MODIFICACIÓN (Paso 2) ===== -->
+
+                  <!-- Contenedor de Dropdown -->
+                  <div v-else-if="msg.custom.type === 'dropdown'" class="dropdown-container">
+                    <select @change="sendMessage($event.target.value)" class="dropdown-select">
+                      <!-- El placeholder "Select a size..." viene del bot, pero si no, ponemos uno genérico -->
+                      <option value="" disabled selected>{{ msg.custom.placeholder || 'Select an option...' }}</option>
+                      
+                      <option 
+                        v-for="option in msg.custom.options" 
+                        :key="option.title"
+                        :value="option.payload"> {{ option.title }}
+                      </option>
+                    </select>
                   </div>
 
                   <!-- Upload de archivo -->
@@ -828,15 +861,43 @@ body {
   }
 }
 
+/* ===== INICIO DE LA MODIFICACIÓN (Paso 3 - Botones) ===== */
 /* Botones de opciones */
 .button-container {
   display: flex;
-  flex-wrap: wrap;
+  
+  /* ESTOS SON LOS CAMBIOS */
+  flex-wrap: nowrap;  /* <-- Cambia 'wrap' por 'nowrap' */
+  overflow-x: auto;   /* <-- Añade scroll horizontal */
+  padding-bottom: 12px; /* <-- Espacio para la barra de scroll */
+
   gap: 8px;
   margin-top: 8px;
+
+  /* Añade esto para un "final" más suave en iOS */
+  -webkit-overflow-scrolling: touch; 
 }
 
+/* (Opcional) Estiliza la barra de scroll para que sea sutil */
+.button-container::-webkit-scrollbar {
+  height: 6px;
+}
+.button-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+.button-container::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+.button-container::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+/* ===== FIN DE LA MODIFICACIÓN (Paso 3 - Botones) ===== */
+
 .option-btn {
+  /* Añade esto para que los botones no se encojan */
+  flex-shrink: 0;
+
   background: white;
   border: 2px solid #3b82f6;
   color: #3b82f6;
@@ -1069,5 +1130,95 @@ body {
 /* Links en las burbujas del usuario (blancos) */
 .message-wrapper.user .message-bubble p a {
   color: #ffffff;
+}
+
+/* ============================================
+   ESTILOS PARA EL NUEVO DROPDOWN
+   ============================================ */
+.dropdown-container {
+  margin-top: 12px;
+}
+.dropdown-select {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 500;
+  font-family: inherit;
+  color: #0f172a;
+  background-color: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  cursor: pointer;
+  appearance: none; /* Quita el estilo feo por defecto del navegador */
+  
+  /* Añade una flecha personalizada */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2364748b'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd' /%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 20px;
+  transition: all 0.2s ease;
+}
+.dropdown-select:hover {
+  border-color: #cbd5e1;
+}
+.dropdown-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+  background-color: #ffffff;
+}
+
+/* ============================================
+   ESTILOS PARA EL NUEVO GRID DE BOTONES
+   ============================================ */
+
+.grid-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* 2 columnas de igual tamaño */
+  gap: 8px; /* Espacio entre botones */
+  margin-top: 12px;
+}
+
+.grid-btn {
+  /* Estilos que ya tenías */
+  background: white;
+  border: 2px solid #3b82f6;
+  color: #3b82f6;
+  padding: 12px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  width: 100%;
+  text-align: center;
+  
+  /* ======================================= */
+  /* ¡LA CORRECCIÓN! (Quitamos 'height: 100%') */
+  /* ======================================= */
+  
+  /* 1. Permite que el texto se divida en múltiples líneas */
+  white-space: normal; 
+  word-wrap: break-word;
+  
+  /* 2. Centrado vertical y alineación */
+  display: flex; 
+  align-items: center; /* Centra el texto verticalmente */
+  justify-content: center; /* Centra el texto horizontalmente */
+  
+  /* 3. Asegura un alto mínimo para botones con poco texto */
+  min-height: 50px; 
+}
+
+.grid-btn:hover {
+  background: #3b82f6;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+}
+
+.grid-btn:active {
+  transform: translateY(0);
 }
 </style>
