@@ -15,4 +15,16 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
   },
+
+  // --- ¡BLOQUE AÑADIDO PARA NOMBRES FIJOS! ---
+  build: {
+    rollupOptions: {
+      output: {
+        // Genera archivos con nombres fijos
+        entryFileNames: `assets/chat-widget.js`,
+        assetFileNames: `assets/chat-widget.[ext]`
+      }
+    }
+  }
+  // ---------------------------------
 })
