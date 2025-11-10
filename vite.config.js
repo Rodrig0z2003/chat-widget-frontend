@@ -16,21 +16,23 @@ export default defineConfig({
     },
   },
 
-  // --- ¡BLOQUE FINAL PARA NOMBRES FIJOS! ---
+  // --- ¡BLOQUE MODIFICADO PARA NOMBRES FIJOS! ---
   build: {
     rollupOptions: {
       output: {
         // 1. Nombra el JS principal
         entryFileNames: `assets/chat-widget.js`,
 
-        // 2. Esta función nombra el CSS de forma fija PERO
-        //    deja que los demás assets (imágenes, fuentes) tengan sus nombres originales
+        // 2. Nombra los assets (imágenes, fuentes) con sus nombres + hash
+        chunkFileNames: `assets/[name]-[hash].js`,
+
+        // 3. Esta función nombra el CSS de forma fija PERO
+        //    deja que los demás assets (imágenes) tengan sus nombres correctos
         assetFileNames: (assetInfo) => {
           if (assetInfo.name.endsWith('.css')) {
             return `assets/chat-widget.css`;
           }
-          // Esto quita el hash de las imágenes, fuentes, etc.
-          return `assets/[name].[ext]`;
+          return `assets/[name]-[hash].[ext]`;
         },
       }
     }
