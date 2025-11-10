@@ -4,8 +4,8 @@ import axios from 'axios';
 
 // --- CORRECCIÓN ---
 // 1. Importa el logo de tu empresa. Asegúrate de que la ruta sea correcta.
-import dtfLogoUrl from '/src/assets/dtf-logo.webp'; // <-- Asume que tu logo está aquí
-
+//import dtfLogoUrl from '/src/assets/dtf-logo.webp'; // <-- Asume que tu logo está aquí
+import dtfLogoUrl from '@/assets/dtf-logo.webp';
 
 // --- ESTADO DEL CHAT ---
 const isChatOpen = ref(false);
