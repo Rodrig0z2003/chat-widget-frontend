@@ -330,10 +330,6 @@ watch(messages, async () => {
   box-sizing: border-box;
 }
 
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  margin: 0;
-}
 
 /* ============================================
    BOTÓN FLOTANTE (FAB) - Mejorado
