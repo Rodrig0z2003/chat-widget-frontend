@@ -36,6 +36,14 @@ const openChat = async () => {
         message: "/greet"
       });
 
+      // ======================================================
+      // MODIFICACIÓN PARA EL DELAY (Saludo inicial)
+      // ======================================================
+      // Simulamos un "pensamiento" con un delay aleatorio (entre 0.5s y 1.2s)
+      const randomDelay = Math.floor(Math.random() * 700) + 500; // Delay entre 500ms y 1200ms
+      await new Promise(resolve => setTimeout(resolve, randomDelay));
+      // ======================================================
+
       // Quita el "escribiendo..."
       messages.value.shift(); 
       
@@ -79,6 +87,15 @@ const sendMessage = async (payload = null) => {
       sender: senderId.value,
       message: messageToSend
     });
+
+    // ======================================================
+    // MODIFICACIÓN PARA EL DELAY (Respuestas)
+    // ======================================================
+    // Simulamos un "pensamiento" del bot con un delay aleatorio (ej. entre 0.5s y 1.2s)
+    // El indicador "escribiendo..." sigue visible durante este tiempo.
+    const randomDelay = Math.floor(Math.random() * 700) + 500; // Delay entre 500ms y 1200ms
+    await new Promise(resolve => setTimeout(resolve, randomDelay));
+    // ======================================================
 
     // 4. Quita el "escribiendo..."
     messages.value.pop();
@@ -125,19 +142,30 @@ const handleFileUpload = (event) => {
 };
 
 // ======================================================
-// MODIFICACIÓN 1: Función para formatear Markdown
+// MODIFICACIÓN 1: Función para formatear Markdown (¡MEJORADA!)
 // ======================================================
 const formatMessage = (text) => {
   if (!text) return '';
-  
-  // 1. Reemplaza \n (nuevas líneas de Rasa) con <br> (saltos de línea HTML)
-  let formattedText = text.replace(/\n/g, '<br>');
 
-  // 2. Reemplaza **negrita** con <strong>negrita</strong>
+  // --- ¡NUEVO PASO 1: VIÑETAS! ---
+  // Usa el flag 'm' (multilínea) para encontrar '*' al inicio (^) de CUALQUIER línea.
+  // Lo reemplaza con un <span> que tiene una viñeta HTML y margen.
+  // 'display: block' asegura que cada viñeta esté en su propia línea.
+  let formattedText = text.replace(
+    /^\* (.*)$/gm, 
+    '<span style="padding-left: 15px; display: block;">&bull; $1</span>'
+  );
+
+  // --- PASO 2: Saltos de línea ---
+  // Reemplaza los \n restantes por <br>
+  formattedText = formattedText.replace(/\n/g, '<br>');
+
+  // --- PASO 3: Negrita ---
+  // Reemplaza **negrita** con <strong>negrita</strong>
   formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   
-  // 3. Reemplaza [texto](link) con <a href="link" target="_blank">texto</a>
-  // target="_blank" abre el link en una nueva pestaña
+  // --- PASO 4: Links ---
+  // Reemplaza [texto](link) con <a href="link" target="_blank">texto</a>
   formattedText = formattedText.replace(
     /\[(.*?)\]\((.*?)\)/g, 
     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
@@ -216,7 +244,7 @@ watch(messages, async () => {
 
                 <!-- Mensajes custom (botones, etc.) -->
                 <div v-if="msg.type === 'custom'" class="message-bubble">
-                  <p v-if="msg.custom.text">{{ msg.custom.text }}</p>
+                  <p v-if="msg.custom.text" v-html="formatMessage(msg.custom.text)"></p>
                   
                   <!-- Contenedor de Botones (Ahora con scroll horizontal) -->
                   <div v-if="msg.custom.type === 'buttons'" class="button-container">
