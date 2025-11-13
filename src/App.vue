@@ -1,5 +1,5 @@
 <script setup>
-import { ref, nextTick, watch } from 'vue';
+import { ref, nextTick, watch, onMounted } from 'vue'; // <-- MODIFICACIÓN 1
 import axios from 'axios';
 
 // --- CORRECCIÓN ---
@@ -12,6 +12,7 @@ const isChatOpen = ref(false);
 const inputText = ref('');
 const messages = ref([]);
 const senderId = ref('user_' + Math.random().toString(36).substr(2, 9));
+//const senderId = ref('user_wqov2g0b1');
 //const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
 //Cambio a link 
 //const RASA_API_URL = '/webhooks/rest/webhook';
@@ -174,6 +175,41 @@ const formatMessage = (text) => {
   return formattedText;
 };
 
+// ======================================================
+// ¡AÑADE ESTA NUEVA FUNCIÓN! (MODIFICACIÓN 2)
+// Conecta el widget a Reverb para "escuchar"
+// ======================================================
+const listenForAgentMessages = () => {
+  // Asegúrate de que window.Echo se cargó desde bootstrap.js/echo.js
+  if (window.Echo) {
+    
+    // 1. Conéctate al canal privado usando el senderId del usuario
+    window.Echo.private('chat.' + senderId.value)
+      
+      // 2. Escucha el evento "AgentMessageSent" (el nombre de tu clase en Laravel)
+      .listen('AgentMessageSent', (e) => {
+        
+        // 3. (Opcional) Quita el "escribiendo..." si el bot lo dejó puesto
+        if (messages.value.length > 0 && messages.value[messages.value.length - 1].type === 'typing') {
+          messages.value.pop();
+        }
+
+        // 4. ¡RECIBIMOS EL MENSAJE! Añádelo al chat
+        // Usamos 'bot' para que se muestre a la izquierda, con el avatar
+        messages.value.push({
+          from: 'bot', 
+          type: 'text',
+          // Tu función formatMessage() convertirá esto a negrita
+          text: `**${e.agent_name} (Agent):** ${e.message}` 
+        });
+      });
+      
+  } else {
+    console.error('Laravel Echo (Reverb) no está configurado. Revisa tu archivo echo.js.');
+  }
+};
+
+
 // Auto-scroll al fondo del chat cuando llegan mensajes nuevos
 watch(messages, async () => {
   await nextTick();
@@ -181,6 +217,16 @@ watch(messages, async () => {
     chatHistory.value.scrollTop = chatHistory.value.scrollHeight;
   }
 }, { deep: true });
+
+// ======================================================
+// ¡AÑADE ESTO AL FINAL DEL SCRIPT SETUP! (MODIFICACIÓN 3)
+// Esto le dice a Vue que empiece a "escuchar"
+// tan pronto como el componente del chat se cargue.
+// ======================================================
+onMounted(() => {
+  console.log('¡App.vue MONTADO! Intentando conectar a Echo...');
+  listenForAgentMessages();
+});
 </script>
 
 <template>
