@@ -20,6 +20,13 @@ const senderId = ref('user_' + Math.random().toString(36).substr(2, 9));
 const RASA_API_URL = 'https://chat.dtfsuppliespro.com/webhooks/rest/webhook';
 const chatHistory = ref(null);
 
+// --- ¡INICIO DEL CAMBIO 1! ---
+// Añade el nuevo endpoint de Laravel para mensajes de usuario
+//const LARAVEL_USER_API_URL = 'http://127.0.0.1:8001/api/user/send-message'; // Añade el nuevo estado de handoff
+const LARAVEL_USER_API_URL = 'https://dev.gangsheet-builders.com/api/user/send-message'; // Añade el nuevo estado de handoff
+const isHandoffActive = ref(false);
+// --- ¡FIN DEL CAMBIO 1! ---
+
 // --- FUNCIONES DEL CHAT ---
 
 // Abre el chat y envía el saludo inicial
@@ -79,59 +86,95 @@ const sendMessage = async (payload = null) => {
     messages.value.push({ from: 'user', type: 'text', text: selectedText });
   }
 
-  // 2. Muestra "escribiendo..."
-  messages.value.push({ from: 'bot', type: 'typing' });
-
-  try {
-    // 3. Envía el mensaje a la API de Rasa
-    const response = await axios.post(RASA_API_URL, {
-      sender: senderId.value,
-      message: messageToSend
-    });
-
-    // ======================================================
-    // MODIFICACIÓN PARA EL DELAY (Respuestas)
-    // ======================================================
-    // Simulamos un "pensamiento" del bot con un delay aleatorio (ej. entre 0.5s y 1.2s)
-    // El indicador "escribiendo..." sigue visible durante este tiempo.
-    const randomDelay = Math.floor(Math.random() * 700) + 500; // Delay entre 500ms y 1200ms
-    await new Promise(resolve => setTimeout(resolve, randomDelay));
-    // ======================================================
-
-    // 4. Quita el "escribiendo..."
-    messages.value.pop();
-
-    // 5. Procesa la respuesta de Rasa
-    if (response.data.length === 0) {
-      messages.value.push({ from: 'bot', type: 'text', text: "Sorry, I didn't understand." });
-    } else {
-      response.data.forEach((botMessage) => {
-        if (botMessage.custom) {
-          // Manejo de 'custom' (que puede ser dropdown, grid, etc.)
-          messages.value.push({ from: 'bot', type: 'custom', custom: botMessage.custom });
-        } else if (botMessage.buttons) {
-          // Manejo de botones de Rasa (que ahora vienen como `botMessage.buttons`)
-          // Convertimos al formato que espera el frontend
-          messages.value.push({ 
-            from: 'bot', 
-            type: 'custom', 
-            custom: {
-              text: botMessage.text || null,
-              type: 'buttons',
-              options: botMessage.buttons // botMessage.buttons es el array [{title: '...', payload: '...'}]
-            }
-          });
-        } else {
-          messages.value.push({ from: 'bot', type: 'text', text: botMessage.text });
-        }
+  // --- ¡INICIO DEL CAMBIO 2! ---
+  // Revisa si estamos en modo agente o modo bot
+  if (isHandoffActive.value) {
+    // ========================================
+    // MODO AGENTE: Enviar a Laravel
+    // ========================================
+    try {
+      // Envía el mensaje al nuevo endpoint de Laravel
+      await axios.post(LARAVEL_USER_API_URL, {
+        sender_id: senderId.value,
+        message: messageToSend
       });
+      // No necesitamos hacer nada más, el agente lo verá
+      // y su respuesta llegará por el WebSocket que ya escuchamos.
+      
+    } catch (error) {
+      console.error("Error al enviar mensaje a Laravel:", error);
+      // Muestra un error temporal si falla
+      messages.value.push({ from: 'bot', type: 'text', text: 'Sorry, your message could not be sent. Please check your connection.' });
     }
 
-  } catch (error) {
-    console.error("Error al contactar a Rasa:", error);
-    messages.value.pop();
-    messages.value.push({ from: 'bot', type: 'text', text: 'Sorry, I could not connect.' });
+  } else {
+    // ========================================
+    // MODO BOT: Enviar a Rasa (CÓDIGO ANTIGUO)
+    // ========================================
+    // 2. Muestra "escribiendo..."
+    messages.value.push({ from: 'bot', type: 'typing' });
+
+    try {
+      // 3. Envía el mensaje a la API de Rasa
+      const response = await axios.post(RASA_API_URL, {
+        sender: senderId.value,
+        message: messageToSend
+      });
+
+      // ======================================================
+      // MODIFICACIÓN PARA EL DELAY (Respuestas)
+      // ======================================================
+      // Simulamos un "pensamiento" del bot con un delay aleatorio (ej. entre 0.5s y 1.2s)
+      // El indicador "escribiendo..." sigue visible durante este tiempo.
+      const randomDelay = Math.floor(Math.random() * 700) + 500; // Delay entre 500ms y 1200ms
+      await new Promise(resolve => setTimeout(resolve, randomDelay));
+      // ======================================================
+
+      // 4. Quita el "escribiendo..."
+      messages.value.pop();
+
+      // 5. Procesa la respuesta de Rasa
+      if (response.data.length === 0) {
+        messages.value.push({ from: 'bot', type: 'text', text: "Sorry, I didn't understand." });
+      } else {
+        response.data.forEach((botMessage) => {
+
+          // --- ¡INICIO DEL CAMBIO 3! ---
+          // ¡Detecta la señal de handoff de Rasa!
+          if (botMessage.custom && botMessage.custom.type === 'handoff_start') {
+            isHandoffActive.value = true;
+            console.log('HANDOFF ACTIVADO: Cambiando a modo Agente.');
+          } 
+          // --- ¡FIN DEL CAMBIO 3! ---
+
+          else if (botMessage.custom) {
+            // Manejo de 'custom' (que puede ser dropdown, grid, etc.)
+            messages.value.push({ from: 'bot', type: 'custom', custom: botMessage.custom });
+          } else if (botMessage.buttons) {
+            // Manejo de botones de Rasa (que ahora vienen como `botMessage.buttons`)
+            // Convertimos al formato que espera el frontend
+            messages.value.push({ 
+              from: 'bot', 
+              type: 'custom', 
+              custom: {
+                text: botMessage.text || null,
+                type: 'buttons',
+                options: botMessage.buttons // botMessage.buttons es el array [{title: '...', payload: '...'}]
+              }
+            });
+          } else {
+            messages.value.push({ from: 'bot', type: 'text', text: botMessage.text });
+          }
+        });
+      }
+
+    } catch (error) {
+      console.error("Error al contactar a Rasa:", error);
+      messages.value.pop();
+      messages.value.push({ from: 'bot', type: 'text', text: 'Sorry, I could not connect.' });
+    }
   }
+  // --- ¡FIN DEL CAMBIO 2! ---
 };
 
 const handleFileUpload = (event) => {
@@ -183,12 +226,12 @@ const listenForAgentMessages = () => {
   // Asegúrate de que window.Echo se cargó desde bootstrap.js/echo.js
   if (window.Echo) {
     
-    // 1. Conéctate al canal privado usando el senderId del usuario
-    window.Echo.private('chat.' + senderId.value)
-      
-      // 2. Escucha el evento "AgentMessageSent" (el nombre de tu clase en Laravel)
-      .listen('AgentMessageSent', (e) => {
-        
+    // Escucha en el canal del usuario
+    const userChannel = window.Echo.channel('chat.' + senderId.value);
+
+    // 1. Escucha mensajes DEL AGENTE (esto ya lo tenías)
+    userChannel.listen('.AgentMessageSent', (e) => {
+         console.log('¡EVENTO RECIBIDO (Agente)!', e); 
         // 3. (Opcional) Quita el "escribiendo..." si el bot lo dejó puesto
         if (messages.value.length > 0 && messages.value[messages.value.length - 1].type === 'typing') {
           messages.value.pop();
@@ -202,7 +245,27 @@ const listenForAgentMessages = () => {
           // Tu función formatMessage() convertirá esto a negrita
           text: `**${e.agent_name} (Agent):** ${e.message}` 
         });
-      });
+    });
+
+    // --- ¡INICIO DEL CAMBIO! ---
+    // 2. Escucha el evento de FIN DE HANDOFF
+    userChannel.listen('.HandoffEnded', (e) => {
+        console.log('¡EVENTO RECIBIDO (Handoff Ended)!', e);
+        
+        // Vuelve al modo BOT
+        isHandoffActive.value = false;
+
+        // Avisa al usuario
+        messages.value.push({
+          from: 'bot', 
+          type: 'text',
+          text: 'The agent has left. You are now reconnected with the DTF Assistant.'
+        });
+        
+        // (Opcional) Envía un mensaje a Rasa para que salude de nuevo
+        // sendMessage("/greet"); // Descomenta esto si quieres que el bot salude al volver
+    });
+    // --- ¡FIN DEL CAMBIO! ---
       
   } else {
     console.error('Laravel Echo (Reverb) no está configurado. Revisa tu archivo echo.js.');
