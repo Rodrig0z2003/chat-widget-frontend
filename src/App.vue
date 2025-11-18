@@ -13,17 +13,17 @@ const inputText = ref('');
 const messages = ref([]);
 const senderId = ref('user_' + Math.random().toString(36).substr(2, 9));
 //const senderId = ref('user_wqov2g0b1');
-//const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
+const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
 //Cambio a link 
 //const RASA_API_URL = '/webhooks/rest/webhook';
 
-const RASA_API_URL = 'https://chat.dtfsuppliespro.com/webhooks/rest/webhook';
+//const RASA_API_URL = 'https://chat.dtfsuppliespro.com/webhooks/rest/webhook';
 const chatHistory = ref(null);
 
 // --- ¡INICIO DEL CAMBIO 1! ---
 // Añade el nuevo endpoint de Laravel para mensajes de usuario
-//const LARAVEL_USER_API_URL = 'http://127.0.0.1:8001/api/user/send-message'; // Añade el nuevo estado de handoff
-const LARAVEL_USER_API_URL = 'https://dev.gangsheet-builders.com/api/user/send-message'; // Añade el nuevo estado de handoff
+const LARAVEL_USER_API_URL = 'http://127.0.0.1:8001/api/user/send-message'; // Añade el nuevo estado de handoff
+//const LARAVEL_USER_API_URL = 'https://dev.gangsheet-builders.com/api/user/send-message'; // Añade el nuevo estado de handoff
 const isHandoffActive = ref(false);
 // --- ¡FIN DEL CAMBIO 1! ---
 

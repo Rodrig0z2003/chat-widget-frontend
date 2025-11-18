@@ -57,5 +57,5 @@ window.Echo = new Echo({
 
 
 // Crear e iniciar la app Vue
-//createApp(App).mount('#app')
-createApp(App).mount('#dtf-chatbot-root')
+createApp(App).mount('#app')
+//createApp(App).mount('#dtf-chatbot-root')
