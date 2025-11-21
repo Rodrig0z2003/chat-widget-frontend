@@ -5,7 +5,8 @@ import axios from 'axios';
 // --- CORRECCIÓN ---
 // 1. Importa el logo de tu empresa. Asegúrate de que la ruta sea correcta.
 //import dtfLogoUrl from '/src/assets/dtf-logo.webp'; // <-- Asume que tu logo está aquí
-import dtfLogoUrl from '@/assets/dtf-logo.webp';
+// NOTA: Asegúrate de que esta ruta (@/assets/...) exista en tu proyecto o cámbiala por la tuya.
+import dtfLogoUrl from '@/assets/dtf-logo.webp'; 
 
 // --- ESTADO DEL CHAT ---
 const isChatOpen = ref(false);
@@ -492,6 +493,8 @@ onMounted(() => {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: visible;
+  /* Evitar tap en móvil */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .chat-bubble:hover {
@@ -640,6 +643,9 @@ onMounted(() => {
   background: #ffffff;
   overflow: hidden;
   z-index: 1000;
+  /* Optimización para renderizado en móvil */
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 /* Animaciones de entrada/salida del chat */
@@ -682,6 +688,7 @@ onMounted(() => {
   justify-content: space-between;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   position: relative;
+  flex-shrink: 0; /* Asegura que el header no se encoja */
 }
 
 .chat-header::before {
@@ -800,8 +807,11 @@ onMounted(() => {
 .chat-history {
   flex-grow: 1;
   overflow-y: auto;
+  overflow-x: hidden; /* Evitar scroll horizontal accidental */
   background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%);
   position: relative;
+  /* Scroll suave en iOS */
+  -webkit-overflow-scrolling: touch;
 }
 
 .chat-history::before {
@@ -846,6 +856,7 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   animation: messageSlide 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  max-width: 100%; /* Asegura que no rompa el ancho */
 }
 
 @keyframes messageSlide {
@@ -894,7 +905,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 70%;
+  max-width: 75%; /* Ligeramente más ancho para móvil */
 }
 
 .message-bubble {
@@ -948,6 +959,7 @@ onMounted(() => {
   /* ====================================================== */
   white-space: pre-wrap; /* Esto permite que los <br> que añadimos funcionen */
   word-wrap: break-word; /* Asegura que no se rompa el layout */
+  overflow-wrap: break-word; /* Prevención extra para URLs largas */
 }
 
 .message-time {
@@ -1008,6 +1020,7 @@ onMounted(() => {
 
   gap: 8px;
   margin-top: 8px;
+  max-width: 100%; /* Contener dentro de la burbuja */
 
   /* Añade esto para un "final" más suave en iOS */
   -webkit-overflow-scrolling: touch; 
@@ -1095,6 +1108,7 @@ onMounted(() => {
   background: white;
   border-top: 1px solid #e2e8f0;
   padding: 16px 20px 12px;
+  flex-shrink: 0; /* Asegura que no se aplaste */
 }
 
 .chat-input {
@@ -1125,6 +1139,7 @@ onMounted(() => {
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .attachment-btn svg {
@@ -1150,6 +1165,7 @@ onMounted(() => {
   font-family: inherit;
   color: #0f172a;
   font-weight: 500;
+  min-width: 0; /* Permite encogerse en flex */
 }
 
 .chat-input input::placeholder {
@@ -1205,40 +1221,80 @@ onMounted(() => {
   font-weight: 500;
 }
 
-/* Responsive */
-@media (max-width: 480px) {
+/* ============================================
+   RESPONSIVE (MÓVIL TOTALMENTE OPTIMIZADO)
+   ============================================ */
+@media (max-width: 640px) { /* Aumentado a 640px para cubrir teléfonos grandes */
+  
   .chat-widget {
-    width: 100%;
+    width: 100% !important;
+    /* Usar altura dinámica para evitar problemas con la barra de URL en móvil */
+    height: 100dvh !important; 
+    /* Fallback para navegadores antiguos */
     height: 100vh;
     border-radius: 0;
-    bottom: 0;
-    right: 0;
+    bottom: 0 !important;
+    right: 0 !important;
+    top: 0 !important;
+    margin: 0;
+    
+    /* Layout seguro para flex */
+    display: flex;
+    flex-direction: column;
   }
   
-  .chat-bubble {
-    bottom: 20px;
-    right: 20px;
-    width: 64px;
-    height: 64px;
+  /* Ajustar header */
+  .chat-header {
+    border-radius: 0;
+    padding: 16px 20px;
+    padding-top: max(16px, env(safe-area-inset-top)); /* Notch support */
   }
 
-  .fab-chat-icon { /* Ajuste responsivo para el nuevo SVG */
-    width: 32px;
-    height: 32px;
-  }
-
-  .notification-badge {
-    width: 22px;
-    height: 22px;
-    font-size: 11px;
+  /* Ajustar contenedor de mensajes */
+  .messages-container {
+    padding: 16px 14px;
+    padding-bottom: 20px;
   }
 
   .message-content {
-    max-width: 75%;
+    max-width: 82%; /* Usar más espacio en móvil */
   }
 
-  .chat-header {
-    border-radius: 0;
+  /* Ajustar input para teclado móvil */
+  .chat-input-container {
+    /* Padding inferior seguro para iPhones sin botón físico */
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  /* IMPORTANTÍSIMO: Evitar zoom automático en iOS al hacer focus */
+  .chat-input input {
+    font-size: 16px; 
+  }
+
+  /* Ocultar texto de ayuda en móvil para ganar espacio */
+  .input-helper {
+    display: none;
+  }
+  
+  /* Botón flotante más pequeño si se llega a ver */
+  .chat-bubble {
+    bottom: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+  }
+
+  .fab-chat-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .notification-badge {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+    top: -2px;
+    right: -2px;
   }
 }
 
