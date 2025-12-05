@@ -14,25 +14,97 @@ const inputText = ref('');
 const messages = ref([]);
 const senderId = ref('user_' + Math.random().toString(36).substr(2, 9));
 //const senderId = ref('user_wqov2g0b1');
-const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
+//const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
 //Cambio a link 
 //const RASA_API_URL = '/webhooks/rest/webhook';
 
-//const RASA_API_URL = 'https://chat.dtfsuppliespro.com/webhooks/rest/webhook';
+const RASA_API_URL = 'https://chat.dtfsuppliespro.com/webhooks/rest/webhook';
 const chatHistory = ref(null);
 
 // --- ¡INICIO DEL CAMBIO 1! ---
 // Añade el nuevo endpoint de Laravel para mensajes de usuario
-const LARAVEL_USER_API_URL = 'http://127.0.0.1:8001/api/user/send-message'; // Añade el nuevo estado de handoff
-//const LARAVEL_USER_API_URL = 'https://dev.gangsheet-builders.com/api/user/send-message'; // Añade el nuevo estado de handoff
+//const LARAVEL_USER_API_URL = 'http://127.0.0.1:8001/api/user/send-message'; // Añade el nuevo estado de handoff
+const LARAVEL_USER_API_URL = 'https://dev.gangsheet-builders.com/api/user/send-message'; // Añade el nuevo estado de handoff
 const isHandoffActive = ref(false);
 // --- ¡FIN DEL CAMBIO 1! ---
+
+
+// ======================================================
+// --- SISTEMA DE VOZ (TTS - AUTOPLAY) ---
+// ======================================================
+
+const speechQueue = ref([]);   // Cola de mensajes por leer
+const isSpeaking = ref(false); // Bandera para saber si está hablando
+
+// Función para limpiar Markdown y HTML antes de leer
+const cleanTextForSpeech = (text) => {
+  if (!text) return "";
+  return text
+    .replace(/\*\*/g, '')      // Quitar negritas Markdown
+    .replace(/__/g, '')        // Quitar cursivas Markdown
+    .replace(/<[^>]*>?/gm, '') // Quitar etiquetas HTML
+    .replace(/https?:\/\/\S+/g, 'link'); // Reemplazar URLs largas por la palabra "link"
+};
+
+// Función principal: Procesa la cola y habla
+const processSpeechQueue = () => {
+  if (isSpeaking.value || speechQueue.value.length === 0) return;
+
+  isSpeaking.value = true;
+  const textToSpeak = speechQueue.value.shift(); // Sacar el primer mensaje
+
+  if ('speechSynthesis' in window) {
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    utterance.lang = 'en-US'; // Configurado a Inglés (ajusta a 'es-ES' si prefieres español)
+    utterance.rate = 1.0;     // Velocidad normal
+    
+    // Cuando termine de hablar, pasa al siguiente
+    utterance.onend = () => {
+      isSpeaking.value = false;
+      processSpeechQueue(); 
+    };
+
+    // Si hay error, salta al siguiente
+    utterance.onerror = (e) => {
+      console.error("TTS Error:", e);
+      isSpeaking.value = false;
+      processSpeechQueue();
+    };
+
+    window.speechSynthesis.speak(utterance);
+  } else {
+    isSpeaking.value = false;
+  }
+};
+
+// Función para agregar mensajes a la cola (llamar a esto cuando llegue un mensaje)
+const speakBotMessage = (rawText) => {
+  const clean = cleanTextForSpeech(rawText);
+  if (clean.trim().length > 0) {
+    speechQueue.value.push(clean);
+    processSpeechQueue();
+  }
+};
+
+// ======================================================
+// --- FIN SISTEMA DE VOZ ---
+// ======================================================
+
 
 // --- FUNCIONES DEL CHAT ---
 
 // Abre el chat y envía el saludo inicial
 const openChat = async () => {
   isChatOpen.value = true;
+
+  // --- NUEVO: DESBLOQUEAR AUDIO ---
+  // Reproducir un silencio micro para obtener permisos del navegador al hacer clic
+  if ('speechSynthesis' in window) {
+    const silentMsg = new SpeechSynthesisUtterance("");
+    window.speechSynthesis.speak(silentMsg);
+  }
+  // --------------------------------
+
   // Si es la primera vez que abre, saluda
   if (messages.value.length === 0) {
     // Muestra un "escribiendo..." temporal
@@ -58,6 +130,9 @@ const openChat = async () => {
       
       response.data.forEach((botMessage) => {
         messages.value.push({ from: 'bot', type: 'text', text: botMessage.text });
+        
+        // --- VOZ: Leer saludo inicial ---
+        speakBotMessage(botMessage.text);
       });
 
     } catch (error) {
@@ -163,8 +238,16 @@ const sendMessage = async (payload = null) => {
                 options: botMessage.buttons // botMessage.buttons es el array [{title: '...', payload: '...'}]
               }
             });
+            // Si el botón tiene texto acompañante, leerlo
+            if (botMessage.text) {
+               speakBotMessage(botMessage.text);
+            }
           } else {
             messages.value.push({ from: 'bot', type: 'text', text: botMessage.text });
+            
+            // --- VOZ: ¡LEER MENSAJE DEL BOT! ---
+            speakBotMessage(botMessage.text);
+            // -----------------------------------
           }
         });
       }
@@ -246,6 +329,11 @@ const listenForAgentMessages = () => {
           // Tu función formatMessage() convertirá esto a negrita
           text: `**${e.agent_name} (Agent):** ${e.message}` 
         });
+
+        // --- VOZ: LEER MENSAJE DEL AGENTE ---
+        // Leemos solo el mensaje (e.message), no el nombre del agente para que sea más natural
+        speakBotMessage(e.message); 
+        // ------------------------------------
     });
 
     // --- ¡INICIO DEL CAMBIO! ---
@@ -257,11 +345,15 @@ const listenForAgentMessages = () => {
         isHandoffActive.value = false;
 
         // Avisa al usuario
+        const endMsg = 'The agent has left. You are now reconnected with the DTF Assistant.';
         messages.value.push({
           from: 'bot', 
           type: 'text',
-          text: 'The agent has left. You are now reconnected with the DTF Assistant.'
+          text: endMsg
         });
+
+        // --- VOZ: Leer mensaje de desconexión ---
+        speakBotMessage(endMsg);
         
         // (Opcional) Envía un mensaje a Rasa para que salude de nuevo
         // sendMessage("/greet"); // Descomenta esto si quieres que el bot salude al volver
