@@ -1,11 +1,8 @@
 <script setup>
-import { ref, nextTick, watch, onMounted } from 'vue'; // <-- MODIFICACIÓN 1
+import { ref, nextTick, watch, onMounted } from 'vue'; 
 import axios from 'axios';
 
-// --- CORRECCIÓN ---
-// 1. Importa el logo de tu empresa. Asegúrate de que la ruta sea correcta.
-//import dtfLogoUrl from '/src/assets/dtf-logo.webp'; // <-- Asume que tu logo está aquí
-// NOTA: Asegúrate de que esta ruta (@/assets/...) exista en tu proyecto o cámbiala por la tuya.
+// 1. Importa el logo de tu empresa. 
 import dtfLogoUrl from '@/assets/dtf-logo.webp'; 
 
 // --- ESTADO DEL CHAT ---
@@ -13,30 +10,29 @@ const isChatOpen = ref(false);
 const inputText = ref('');
 const messages = ref([]);
 const senderId = ref('user_' + Math.random().toString(36).substr(2, 9));
-//const senderId = ref('user_wqov2g0b1');
-//const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
-//Cambio a link 
-//const RASA_API_URL = '/webhooks/rest/webhook';
 
+//const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
 const RASA_API_URL = 'https://chat.dtfsuppliespro.com/webhooks/rest/webhook';
 const chatHistory = ref(null);
 
-// --- ¡INICIO DEL CAMBIO 1! ---
-// Añade el nuevo endpoint de Laravel para mensajes de usuario
-//const LARAVEL_USER_API_URL = 'http://127.0.0.1:8001/api/user/send-message'; // Añade el nuevo estado de handoff
-const LARAVEL_USER_API_URL = 'https://dev.gangsheet-builders.com/api/user/send-message'; // Añade el nuevo estado de handoff
+// Endpoint de Laravel para mensajes de usuario (Handoff)
+const LARAVEL_USER_API_URL = 'https://dev.gangsheet-builders.com/api/user/send-message'; 
 const isHandoffActive = ref(false);
-// --- ¡FIN DEL CAMBIO 1! ---
 
 
 // ======================================================
-// --- SISTEMA DE VOZ (TTS - AUTOPLAY) ---
+// --- NUEVO SISTEMA DE VOZ (CONECTADO A LARAVEL) ---
 // ======================================================
 
-const speechQueue = ref([]);   // Cola de mensajes por leer
-const isSpeaking = ref(false); // Bandera para saber si está hablando
+const speechQueue = ref([]);   
+const isSpeaking = ref(false); 
 
-// Función para limpiar Markdown y HTML antes de leer
+// URL de tu API en Laravel para generar el audio
+const TTS_API_URL = 'https://dev.gangsheet-builders.com/api/generate-speech'; 
+//const TTS_API_URL = 'http://localhost:8001/api/generate-speech'; 
+
+
+// Función para limpiar texto antes de leer (útil para quitar markdown antes de enviarlo al TTS)
 const cleanTextForSpeech = (text) => {
   if (!text) return "";
   return text
@@ -46,38 +42,51 @@ const cleanTextForSpeech = (text) => {
     .replace(/https?:\/\/\S+/g, 'link'); // Reemplazar URLs largas por la palabra "link"
 };
 
-// Función principal: Procesa la cola y habla
-const processSpeechQueue = () => {
+const processSpeechQueue = async () => {
+  // Si ya está hablando o no hay mensajes, no hacer nada
   if (isSpeaking.value || speechQueue.value.length === 0) return;
 
   isSpeaking.value = true;
   const textToSpeak = speechQueue.value.shift(); // Sacar el primer mensaje
 
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    utterance.lang = 'en-US'; // Configurado a Inglés (ajusta a 'es-ES' si prefieres español)
-    utterance.rate = 1.0;     // Velocidad normal
-    
-    // Cuando termine de hablar, pasa al siguiente
-    utterance.onend = () => {
+  try {
+    console.log("Solicitando audio a Laravel...");
+
+    // 1. Llamada a Laravel (Axios)
+    const response = await axios.post(TTS_API_URL, {
+      text: textToSpeak
+    }, { 
+      responseType: 'blob' // <--- ¡CRUCIAL! Esto le dice que esperamos un archivo binario
+    });
+
+    // 2. Crear URL temporal para reproducir el MP3
+    const audioUrl = URL.createObjectURL(response.data);
+    const audio = new Audio(audioUrl);
+
+    // 3. Eventos del Audio
+    audio.onended = () => {
       isSpeaking.value = false;
-      processSpeechQueue(); 
+      URL.revokeObjectURL(audioUrl); // Liberar memoria
+      processSpeechQueue(); // Ir al siguiente mensaje
     };
 
-    // Si hay error, salta al siguiente
-    utterance.onerror = (e) => {
-      console.error("TTS Error:", e);
+    audio.onerror = (e) => {
+      console.error("Error reproduciendo MP3:", e);
       isSpeaking.value = false;
       processSpeechQueue();
     };
 
-    window.speechSynthesis.speak(utterance);
-  } else {
-    isSpeaking.value = false;
+    // 4. ¡Reproducir!
+    await audio.play();
+
+  } catch (error) {
+    console.error("Error obteniendo voz del servidor:", error);
+    // Si falla, simplemente pasamos al siguiente o paramos
+    isSpeaking.value = false; 
+    processSpeechQueue();
   }
 };
 
-// Función para agregar mensajes a la cola (llamar a esto cuando llegue un mensaje)
 const speakBotMessage = (rawText) => {
   const clean = cleanTextForSpeech(rawText);
   if (clean.trim().length > 0) {
@@ -97,14 +106,6 @@ const speakBotMessage = (rawText) => {
 const openChat = async () => {
   isChatOpen.value = true;
 
-  // --- NUEVO: DESBLOQUEAR AUDIO ---
-  // Reproducir un silencio micro para obtener permisos del navegador al hacer clic
-  if ('speechSynthesis' in window) {
-    const silentMsg = new SpeechSynthesisUtterance("");
-    window.speechSynthesis.speak(silentMsg);
-  }
-  // --------------------------------
-
   // Si es la primera vez que abre, saluda
   if (messages.value.length === 0) {
     // Muestra un "escribiendo..." temporal
@@ -117,13 +118,9 @@ const openChat = async () => {
         message: "/greet"
       });
 
-      // ======================================================
-      // MODIFICACIÓN PARA EL DELAY (Saludo inicial)
-      // ======================================================
-      // Simulamos un "pensamiento" con un delay aleatorio (entre 0.5s y 1.2s)
-      const randomDelay = Math.floor(Math.random() * 700) + 500; // Delay entre 500ms y 1200ms
+      // Simulamos un "pensamiento" con un delay aleatorio
+      const randomDelay = Math.floor(Math.random() * 700) + 500; 
       await new Promise(resolve => setTimeout(resolve, randomDelay));
-      // ======================================================
 
       // Quita el "escribiendo..."
       messages.value.shift(); 
@@ -162,7 +159,6 @@ const sendMessage = async (payload = null) => {
     messages.value.push({ from: 'user', type: 'text', text: selectedText });
   }
 
-  // --- ¡INICIO DEL CAMBIO 2! ---
   // Revisa si estamos en modo agente o modo bot
   if (isHandoffActive.value) {
     // ========================================
@@ -185,7 +181,7 @@ const sendMessage = async (payload = null) => {
 
   } else {
     // ========================================
-    // MODO BOT: Enviar a Rasa (CÓDIGO ANTIGUO)
+    // MODO BOT: Enviar a Rasa
     // ========================================
     // 2. Muestra "escribiendo..."
     messages.value.push({ from: 'bot', type: 'typing' });
@@ -197,14 +193,9 @@ const sendMessage = async (payload = null) => {
         message: messageToSend
       });
 
-      // ======================================================
-      // MODIFICACIÓN PARA EL DELAY (Respuestas)
-      // ======================================================
-      // Simulamos un "pensamiento" del bot con un delay aleatorio (ej. entre 0.5s y 1.2s)
-      // El indicador "escribiendo..." sigue visible durante este tiempo.
-      const randomDelay = Math.floor(Math.random() * 700) + 500; // Delay entre 500ms y 1200ms
+      // Simulamos un "pensamiento" del bot con un delay aleatorio
+      const randomDelay = Math.floor(Math.random() * 700) + 500; 
       await new Promise(resolve => setTimeout(resolve, randomDelay));
-      // ======================================================
 
       // 4. Quita el "escribiendo..."
       messages.value.pop();
@@ -215,27 +206,24 @@ const sendMessage = async (payload = null) => {
       } else {
         response.data.forEach((botMessage) => {
 
-          // --- ¡INICIO DEL CAMBIO 3! ---
           // ¡Detecta la señal de handoff de Rasa!
           if (botMessage.custom && botMessage.custom.type === 'handoff_start') {
             isHandoffActive.value = true;
             console.log('HANDOFF ACTIVADO: Cambiando a modo Agente.');
           } 
-          // --- ¡FIN DEL CAMBIO 3! ---
-
+          
           else if (botMessage.custom) {
             // Manejo de 'custom' (que puede ser dropdown, grid, etc.)
             messages.value.push({ from: 'bot', type: 'custom', custom: botMessage.custom });
           } else if (botMessage.buttons) {
-            // Manejo de botones de Rasa (que ahora vienen como `botMessage.buttons`)
-            // Convertimos al formato que espera el frontend
+            // Manejo de botones de Rasa
             messages.value.push({ 
               from: 'bot', 
               type: 'custom', 
               custom: {
                 text: botMessage.text || null,
                 type: 'buttons',
-                options: botMessage.buttons // botMessage.buttons es el array [{title: '...', payload: '...'}]
+                options: botMessage.buttons 
               }
             });
             // Si el botón tiene texto acompañante, leerlo
@@ -258,7 +246,6 @@ const sendMessage = async (payload = null) => {
       messages.value.push({ from: 'bot', type: 'text', text: 'Sorry, I could not connect.' });
     }
   }
-  // --- ¡FIN DEL CAMBIO 2! ---
 };
 
 const handleFileUpload = (event) => {
@@ -269,31 +256,23 @@ const handleFileUpload = (event) => {
   }
 };
 
-// ======================================================
-// MODIFICACIÓN 1: Función para formatear Markdown (¡MEJORADA!)
-// ======================================================
+// Función para formatear Markdown
 const formatMessage = (text) => {
   if (!text) return '';
 
-  // --- ¡NUEVO PASO 1: VIÑETAS! ---
-  // Usa el flag 'm' (multilínea) para encontrar '*' al inicio (^) de CUALQUIER línea.
-  // Lo reemplaza con un <span> que tiene una viñeta HTML y margen.
-  // 'display: block' asegura que cada viñeta esté en su propia línea.
+  // --- PASO 1: Viñetas ---
   let formattedText = text.replace(
     /^\* (.*)$/gm, 
     '<span style="padding-left: 15px; display: block;">&bull; $1</span>'
   );
 
   // --- PASO 2: Saltos de línea ---
-  // Reemplaza los \n restantes por <br>
   formattedText = formattedText.replace(/\n/g, '<br>');
 
   // --- PASO 3: Negrita ---
-  // Reemplaza **negrita** con <strong>negrita</strong>
   formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   
   // --- PASO 4: Links ---
-  // Reemplaza [texto](link) con <a href="link" target="_blank">texto</a>
   formattedText = formattedText.replace(
     /\[(.*?)\]\((.*?)\)/g, 
     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
@@ -302,10 +281,7 @@ const formatMessage = (text) => {
   return formattedText;
 };
 
-// ======================================================
-// ¡AÑADE ESTA NUEVA FUNCIÓN! (MODIFICACIÓN 2)
-// Conecta el widget a Reverb para "escuchar"
-// ======================================================
+// Conecta el widget a Reverb para "escuchar" al agente
 const listenForAgentMessages = () => {
   // Asegúrate de que window.Echo se cargó desde bootstrap.js/echo.js
   if (window.Echo) {
@@ -313,30 +289,26 @@ const listenForAgentMessages = () => {
     // Escucha en el canal del usuario
     const userChannel = window.Echo.channel('chat.' + senderId.value);
 
-    // 1. Escucha mensajes DEL AGENTE (esto ya lo tenías)
+    // 1. Escucha mensajes DEL AGENTE
     userChannel.listen('.AgentMessageSent', (e) => {
          console.log('¡EVENTO RECIBIDO (Agente)!', e); 
-        // 3. (Opcional) Quita el "escribiendo..." si el bot lo dejó puesto
+        // Quita el "escribiendo..." si el bot lo dejó puesto
         if (messages.value.length > 0 && messages.value[messages.value.length - 1].type === 'typing') {
           messages.value.pop();
         }
 
-        // 4. ¡RECIBIMOS EL MENSAJE! Añádelo al chat
-        // Usamos 'bot' para que se muestre a la izquierda, con el avatar
+        // Añádelo al chat
         messages.value.push({
           from: 'bot', 
           type: 'text',
-          // Tu función formatMessage() convertirá esto a negrita
           text: `**${e.agent_name} (Agent):** ${e.message}` 
         });
 
         // --- VOZ: LEER MENSAJE DEL AGENTE ---
-        // Leemos solo el mensaje (e.message), no el nombre del agente para que sea más natural
         speakBotMessage(e.message); 
         // ------------------------------------
     });
 
-    // --- ¡INICIO DEL CAMBIO! ---
     // 2. Escucha el evento de FIN DE HANDOFF
     userChannel.listen('.HandoffEnded', (e) => {
         console.log('¡EVENTO RECIBIDO (Handoff Ended)!', e);
@@ -354,11 +326,7 @@ const listenForAgentMessages = () => {
 
         // --- VOZ: Leer mensaje de desconexión ---
         speakBotMessage(endMsg);
-        
-        // (Opcional) Envía un mensaje a Rasa para que salude de nuevo
-        // sendMessage("/greet"); // Descomenta esto si quieres que el bot salude al volver
     });
-    // --- ¡FIN DEL CAMBIO! ---
       
   } else {
     console.error('Laravel Echo (Reverb) no está configurado. Revisa tu archivo echo.js.');
@@ -375,12 +343,15 @@ watch(messages, async () => {
 }, { deep: true });
 
 // ======================================================
-// ¡AÑADE ESTO AL FINAL DEL SCRIPT SETUP! (MODIFICACIÓN 3)
-// Esto le dice a Vue que empiece a "escuchar"
-// tan pronto como el componente del chat se cargue.
+// ON MOUNTED MODIFICADO
 // ======================================================
 onMounted(() => {
   console.log('¡App.vue MONTADO! Intentando conectar a Echo...');
+  
+  // Hemos eliminado la carga de voces del navegador porque ahora
+  // el audio viene directamente del servidor Laravel.
+
+  // 2. Tu lógica original de Echo
   listenForAgentMessages();
 });
 </script>
@@ -395,7 +366,7 @@ onMounted(() => {
         <div class="chat-header">
           <div class="header-content">
             <div class="bot-avatar-small">
-              <!-- CORRECCIÓN: Usar el logo de la empresa aquí -->
+              <!-- Usar el logo de la empresa aquí -->
               <img :src="dtfLogoUrl" alt="DTF Logo" class="header-dtf-logo" />
             </div>
             <div class="bot-info">
@@ -421,7 +392,7 @@ onMounted(() => {
               
               <!-- Avatar del bot -->
               <div v-if="msg.from === 'bot'" class="message-avatar">
-                <!-- CORRECCIÓN: Usar el logo de la empresa aquí -->
+                <!-- Usar el logo de la empresa aquí -->
                 <img :src="dtfLogoUrl" alt="Bot" class="message-dtf-logo" />
               </div>
 
@@ -429,11 +400,7 @@ onMounted(() => {
                 
                 <!-- Mensaje de texto normal -->
                 <div v-if="msg.type === 'text'" class="message-bubble">
-                  <!-- 
-                    ======================================================
-                    MODIFICACIÓN 2: AQUÍ ESTÁ LA CORRECCIÓN DE MARKDOWN (v-html)
-                    ======================================================
-                  -->
+                  <!-- CORRECCIÓN DE MARKDOWN (v-html) -->
                   <p v-html="formatMessage(msg.text)"></p>
                 </div>
 
@@ -459,8 +426,7 @@ onMounted(() => {
                     </button>
                   </div>
 
-                  <!-- ===== INICIO DE LA MODIFICACIÓN (Paso 2) ===== -->
-                  <!-- Nuevo Contenedor de Grid -->
+                  <!-- Contenedor de Grid -->
                   <div v-else-if="msg.custom.type === 'grid'" class="grid-container">
                     <button 
                       v-for="option in msg.custom.options" 
@@ -469,12 +435,11 @@ onMounted(() => {
                       class="grid-btn"> {{ option.title }}
                     </button>
                   </div>
-                  <!-- ===== FIN DE LA MODIFICACIÓN (Paso 2) ===== -->
 
                   <!-- Contenedor de Dropdown -->
                   <div v-else-if="msg.custom.type === 'dropdown'" class="dropdown-container">
                     <select @change="sendMessage($event.target.value)" class="dropdown-select">
-                      <!-- El placeholder "Select a size..." viene del bot, pero si no, ponemos uno genérico -->
+                      <!-- El placeholder viene del bot, pero si no, ponemos uno genérico -->
                       <option value="" disabled selected>{{ msg.custom.placeholder || 'Select an option...' }}</option>
                       
                       <option 
@@ -538,7 +503,7 @@ onMounted(() => {
     <transition name="fab-bounce">
       <button v-if="!isChatOpen" @click="openChat" class="chat-bubble">
         <div class="fab-content">
-          <!-- Este es el icono de mensaje, NO el logo de tu empresa -->
+          <!-- Este es el icono de mensaje -->
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="fab-chat-icon">
             <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"></path>
           </svg>
@@ -816,13 +781,11 @@ onMounted(() => {
   overflow: hidden;
 }
 
-/* CORRECCIÓN: Estilos para el logo DTF en el header */
+/* Estilos para el logo DTF en el header */
 .header-dtf-logo {
-  width: 32px; /* Ajusta el tamaño de tu logo si es necesario */
+  width: 32px; 
   height: 32px;
   object-fit: contain;
-  /* Si tu logo ya es blanco o necesita su color original, elimina esta línea */
-  /* filter: brightness(0) invert(1); */ 
 }
 
 
@@ -983,13 +946,11 @@ onMounted(() => {
   overflow: hidden;
 }
 
-/* CORRECCIÓN: Estilos para el logo DTF en los mensajes del bot */
+/* Estilos para el logo DTF en los mensajes del bot */
 .message-dtf-logo {
-  width: 22px; /* Ajusta el tamaño de tu logo si es necesario */
+  width: 22px; 
   height: 22px;
   object-fit: contain;
-  /* Si tu logo ya es blanco o necesita su color original, elimina esta línea */
-  /* filter: brightness(0) invert(1); */ 
 }
 
 
@@ -1046,9 +1007,6 @@ onMounted(() => {
   font-size: 15px;
   font-weight: 500;
   
-  /* ====================================================== */
-  /* MODIFICACIÓN 3 (PARTE 1): Propiedades añadidas para Markdown */
-  /* ====================================================== */
   white-space: pre-wrap; /* Esto permite que los <br> que añadimos funcionen */
   word-wrap: break-word; /* Asegura que no se rompa el layout */
   overflow-wrap: break-word; /* Prevención extra para URLs largas */
@@ -1100,13 +1058,10 @@ onMounted(() => {
   }
 }
 
-/* ===== INICIO DE LA MODIFICACIÓN (Paso 3 - Botones) ===== */
 /* Botones de opciones */
 .button-container {
   display: flex;
-  
-  /* ESTOS SON LOS CAMBIOS */
-  flex-wrap: nowrap;  /* <-- Cambia 'wrap' por 'nowrap' */
+  flex-wrap: nowrap;
   overflow-x: auto;   /* <-- Añade scroll horizontal */
   padding-bottom: 12px; /* <-- Espacio para la barra de scroll */
 
@@ -1132,7 +1087,6 @@ onMounted(() => {
 .button-container::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
-/* ===== FIN DE LA MODIFICACIÓN (Paso 3 - Botones) ===== */
 
 .option-btn {
   /* Añade esto para que los botones no se encojan */
@@ -1390,10 +1344,6 @@ onMounted(() => {
   }
 }
 
-/* ============================================
-   MODIFICACIÓN 3 (PARTE 2): CORRECCIÓN PARA MARKDOWN Y LINKS
-   ============================================ */
-
 /* Estilos para el texto en negrita (<strong>) */
 .message-bubble p strong {
   font-weight: 700;
@@ -1415,9 +1365,7 @@ onMounted(() => {
   color: #ffffff;
 }
 
-/* ============================================
-   ESTILOS PARA EL NUEVO DROPDOWN
-   ============================================ */
+/* ESTILOS PARA EL NUEVO DROPDOWN */
 .dropdown-container {
   margin-top: 12px;
 }
@@ -1451,9 +1399,7 @@ onMounted(() => {
   background-color: #ffffff;
 }
 
-/* ============================================
-   ESTILOS PARA EL NUEVO GRID DE BOTONES
-   ============================================ */
+/* ESTILOS PARA EL NUEVO GRID DE BOTONES */
 
 .grid-container {
   display: grid;
@@ -1477,20 +1423,16 @@ onMounted(() => {
   width: 100%;
   text-align: center;
   
-  /* ======================================= */
-  /* ¡LA CORRECCIÓN! (Quitamos 'height: 100%') */
-  /* ======================================= */
-  
-  /* 1. Permite que el texto se divida en múltiples líneas */
+  /* Permite que el texto se divida en múltiples líneas */
   white-space: normal; 
   word-wrap: break-word;
   
-  /* 2. Centrado vertical y alineación */
+  /* Centrado vertical y alineación */
   display: flex; 
   align-items: center; /* Centra el texto verticalmente */
   justify-content: center; /* Centra el texto horizontalmente */
   
-  /* 3. Asegura un alto mínimo para botones con poco texto */
+  /* Asegura un alto mínimo para botones con poco texto */
   min-height: 50px; 
 }
 
