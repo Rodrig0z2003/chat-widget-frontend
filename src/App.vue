@@ -27,19 +27,33 @@ const isHandoffActive = ref(false);
 const speechQueue = ref([]);   
 const isSpeaking = ref(false); 
 
-// URL de tu API en Laravel para generar el audio
+// URL de tu API en Laravel para generar el audio 
 const TTS_API_URL = 'https://dev.gangsheet-builders.com/api/generate-speech'; 
 //const TTS_API_URL = 'http://localhost:8001/api/generate-speech'; 
 
 
-// Función para limpiar texto antes de leer (útil para quitar markdown antes de enviarlo al TTS)
+// Función mejorada para limpiar texto antes de leer
 const cleanTextForSpeech = (text) => {
   if (!text) return "";
+  
   return text
-    .replace(/\*\*/g, '')      // Quitar negritas Markdown
-    .replace(/__/g, '')        // Quitar cursivas Markdown
-    .replace(/<[^>]*>?/gm, '') // Quitar etiquetas HTML
-    .replace(/https?:\/\/\S+/g, 'link'); // Reemplazar URLs largas por la palabra "link"
+    // 1. Quitar Markdown (negritas, cursivas)
+    .replace(/\*\*/g, '')      
+    .replace(/__/g, '')        
+    
+    // 2. Quitar etiquetas HTML (<br>, <span>, etc)
+    .replace(/<[^>]*>?/gm, '') 
+    
+    // 3. Reemplazar URLs por la palabra "link"
+    .replace(/https?:\/\/\S+/g, 'link')
+    
+    // 4. ¡NUEVO! QUITAR EMOJIS 👋 🔥 😂
+    // Esta expresión regular cubre la gran mayoría de rangos de emojis modernos
+    .replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, '')
+    
+    // 5. Limpieza final (quitar espacios dobles que dejan los emojis borrados y espacios extremos)
+    .replace(/\s+/g, ' ')
+    .trim();
 };
 
 const processSpeechQueue = async () => {
@@ -93,6 +107,77 @@ const speakBotMessage = (rawText) => {
     speechQueue.value.push(clean);
     processSpeechQueue();
   }
+};
+
+// ======================================================
+// --- SISTEMA DE RECONOCIMIENTO DE VOZ (STT) ---
+// ======================================================
+const isRecording = ref(false);
+let recognition = null;
+
+const toggleVoiceInput = () => {
+  // 1. Si ya está grabando, lo detenemos
+  if (isRecording.value) {
+    if (recognition) recognition.stop();
+    isRecording.value = false;
+    return;
+  }
+
+  // 2. Verificamos soporte del navegador
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert("Tu navegador no soporta entrada de voz. Prueba con Chrome o Edge.");
+    return;
+  }
+
+  // 3. Configuramos el reconocimiento
+  recognition = new SpeechRecognition();
+  recognition.lang = 'en-US'; // O 'es-ES' si tu bot habla español
+  recognition.interimResults = false; // Solo resultados finales
+  recognition.maxAlternatives = 1;
+
+  // 4. Eventos
+  recognition.onstart = () => {
+    isRecording.value = true;
+    console.log("🎤 Escuchando...");
+    
+    // Opcional: Si el bot estaba hablando, lo callamos para que nos escuche
+    if (isSpeaking.value) {
+      window.speechSynthesis.cancel(); // Detiene síntesis nativa
+      isSpeaking.value = false;
+      // Nota: Para detener el audio de Laravel (Audio Element), necesitaríamos una referencia global,
+      // pero por ahora esto detendrá al menos la lógica de cola.
+    }
+  };
+
+  recognition.onend = () => {
+    isRecording.value = false;
+    console.log("🎤 Fin de la escucha.");
+  };
+
+  recognition.onresult = (event) => {
+    // 1. Obtenemos lo que dijiste
+    const transcript = event.results[0][0].transcript;
+    console.log("Texto detectado y enviando:", transcript);
+    
+    // 2. Lo ponemos en el input (para que sendMessage lo pueda leer)
+    inputText.value = transcript;
+    
+    // 3. ¡ENVIAR AUTOMÁTICAMENTE!
+    // Llamamos a sendMessage() sin argumentos. 
+    // Como ya llenamos inputText.value arriba, la función lo tomará y lo enviará.
+    if (transcript.trim().length > 0) {
+        sendMessage(null);
+    }
+  };
+
+  recognition.onerror = (event) => {
+    console.error("Error STT:", event.error);
+    isRecording.value = false;
+  };
+
+  // 5. Iniciar
+  recognition.start();
 };
 
 // ======================================================
@@ -212,11 +297,41 @@ const sendMessage = async (payload = null) => {
             console.log('HANDOFF ACTIVADO: Cambiando a modo Agente.');
           } 
           
+          // ========================================================
+          // CASO 1: CUSTOM (GRID, DROPDOWN, ETC.)
+          // ========================================================
           else if (botMessage.custom) {
-            // Manejo de 'custom' (que puede ser dropdown, grid, etc.)
+            // 1. Mostrar visualmente
             messages.value.push({ from: 'bot', type: 'custom', custom: botMessage.custom });
-          } else if (botMessage.buttons) {
-            // Manejo de botones de Rasa
+
+            // 2. CONSTRUIR TEXTO COMPLETO (Título + Opciones)
+            let textToRead = "";
+
+            // Añadir la pregunta principal
+            if (botMessage.custom.text) {
+               textToRead += botMessage.custom.text;
+            }
+
+            // Añadir las opciones separadas por puntos (para que haga pausa natural)
+            if (botMessage.custom.options && Array.isArray(botMessage.custom.options)) {
+                botMessage.custom.options.forEach((option) => {
+                    if (option.title) {
+                        // El punto y espacio ". " hace que la voz respire
+                        textToRead += ". " + option.title; 
+                    }
+                });
+            }
+
+            // 3. ENVIAR TODO JUNTO A LA COLA DE AUDIO (1 sola petición)
+            if (textToRead.trim().length > 0) {
+                speakBotMessage(textToRead);
+            }
+          } 
+
+          // ========================================================
+          // CASO 2: BOTONES NORMALES DE RASA
+          // ========================================================
+          else if (botMessage.buttons) {
             messages.value.push({ 
               from: 'bot', 
               type: 'custom', 
@@ -226,16 +341,30 @@ const sendMessage = async (payload = null) => {
                 options: botMessage.buttons 
               }
             });
-            // Si el botón tiene texto acompañante, leerlo
-            if (botMessage.text) {
-               speakBotMessage(botMessage.text);
-            }
-          } else {
-            messages.value.push({ from: 'bot', type: 'text', text: botMessage.text });
             
-            // --- VOZ: ¡LEER MENSAJE DEL BOT! ---
+            // Lógica de concatenación para botones normales
+            let textToRead = "";
+            
+            if (botMessage.text) {
+                textToRead += botMessage.text;
+            }
+
+            botMessage.buttons.forEach((btn) => {
+                if (btn.title) {
+                    textToRead += ". " + btn.title;
+                }
+            });
+
+            if (textToRead.trim().length > 0) {
+               speakBotMessage(textToRead);
+            }
+
+          } else {
+            // ========================================================
+            // CASO 3: TEXTO NORMAL
+            // ========================================================
+            messages.value.push({ from: 'bot', type: 'text', text: botMessage.text });
             speakBotMessage(botMessage.text);
-            // -----------------------------------
           }
         });
       }
@@ -454,7 +583,7 @@ onMounted(() => {
                   <div v-if="msg.custom.type === 'request_upload'" class="upload-container">
                     <label class="upload-label">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="17 8 12 3 7 8"></polyline>
                         <line x1="12" y1="3" x2="12" y2="15"></line>
                       </svg>
@@ -475,19 +604,41 @@ onMounted(() => {
         <!-- Input de mensajes -->
         <div class="chat-input-container">
           <div class="chat-input">
+            
             <button class="icon-btn attachment-btn" title="Attach file">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
               </svg>
             </button>
+
             <input
               v-model="inputText"
               @keyup.enter="sendMessage(null)"
               type="text"
-              placeholder="Type your message..."
+              :placeholder="isRecording ? 'Listening...' : 'Type your message...'"
             />
+
+            <!-- BOTÓN MICROFONO -->
+            <button 
+              class="icon-btn mic-btn" 
+              :class="{ 'recording': isRecording }" 
+              @click="toggleVoiceInput"
+              title="Speak"
+            >
+              <svg v-if="!isRecording" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+              
+              <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                 <circle cx="12" cy="12" r="6" />
+              </svg>
+            </button>
+
             <button class="send-btn" @click="sendMessage(null)" :disabled="!inputText.trim()">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
               </svg>
             </button>
@@ -1445,5 +1596,43 @@ onMounted(() => {
 
 .grid-btn:active {
   transform: translateY(0);
+}
+
+/* Estilos para el botón de micrófono */
+.mic-btn {
+  color: #64748b;
+  display: flex;            /* Asegura centrado */
+  align-items: center;      /* Asegura centrado vertical */
+  justify-content: center;  /* Asegura centrado horizontal */
+}
+
+.mic-btn svg {
+  width: 26px;  /* Este es el tamaño estándar (igual al clip) */
+  height: 26px;
+  transition: all 0.2s ease;
+}
+
+.mic-btn:hover {
+  background: #e2e8f0;
+  color: #3b82f6;
+}
+
+/* Estado GRABANDO */
+.mic-btn.recording {
+  color: #ef4444; /* Rojo */
+  background: rgba(239, 68, 68, 0.1);
+  animation: pulse-red 1.5s infinite;
+}
+
+@keyframes pulse-red {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
 }
 </style>
