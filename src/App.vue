@@ -11,8 +11,8 @@ const inputText = ref('');
 const messages = ref([]);
 const senderId = ref('user_' + Math.random().toString(36).substr(2, 9));
 
-const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
-//const RASA_API_URL = 'https://chat.dtfsuppliespro.com/webhooks/rest/webhook';
+//const RASA_API_URL = 'http://localhost:5005/webhooks/rest/webhook';
+const RASA_API_URL = 'https://chat.dtfsuppliespro.com/webhooks/rest/webhook';
 const chatHistory = ref(null);
 
 // Endpoint de Laravel para mensajes de usuario (Handoff)
