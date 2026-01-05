@@ -37,17 +37,17 @@ window.Echo = new Echo({
 window.Echo = new Echo({
     broadcaster: 'reverb',
     
-    // ----- CAMBIOS IMPORTANTES AQUÍ -----
-    key: 'g2pmefmk8aibytodtgj3',           // 1. Clave correcta (de tu .env)
-    wsHost: 'dev.gangsheet-builders.com',  // 2. Tu dominio público
-    wsPort: 443,                         // 3. Puerto estándar para WSS
-    wssPort: 443,                        // 3. Puerto estándar para WSS
-    forceTLS: true,                      // 4. ¡OBLIGATORIO! para https://
+    // ----- CONFIGURACIÓN PARA EL NUEVO DOMINIO -----
+    key: 'g2pmefmk8aibytodtgj3',           // Asegúrate de que coincida con REVERB_APP_KEY en el .env de dttorders
+    wsHost: 'dttorders.gangsheet-builders.com',  // Nuevo dominio
+    wsPort: 443,
+    wssPort: 443,
+    forceTLS: true,                        // Mantenlo en true para conexiones seguras
     enabledTransports: ['ws', 'wss'],
     // ------------------------------------
 
-    // Tu endpoint de autenticación está correcto
-    authEndpoint: 'https://dev.gangsheet-builders.com/api/broadcasting/auth', 
+    // Endpoint de autenticación actualizado
+    authEndpoint: 'https://dttorders.gangsheet-builders.com/api/broadcasting/auth', 
 
     headers: {
         'X-Requested-With': 'XMLHttpRequest'
