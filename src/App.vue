@@ -16,7 +16,8 @@ const RASA_API_URL = 'https://chat.dtfsuppliespro.com/webhooks/rest/webhook';
 const chatHistory = ref(null);
 
 // Endpoint de Laravel para mensajes de usuario (Handoff)
-const LARAVEL_USER_API_URL = 'https://dev.gangsheet-builders.com/api/user/send-message'; 
+//const LARAVEL_USER_API_URL = 'https://dev.gangsheet-builders.com/api/user/send-message'; 
+const LARAVEL_USER_API_URL = 'https://dttorders.gangsheet-builders.com/api/user/send-message'; 
 const isHandoffActive = ref(false);
 
 
@@ -28,8 +29,9 @@ const speechQueue = ref([]);
 const isSpeaking = ref(false); 
 
 // URL de tu API en Laravel para generar el audio 
-const TTS_API_URL = 'https://dev.gangsheet-builders.com/api/generate-speech'; 
+//const TTS_API_URL = 'https://dev.gangsheet-builders.com/api/generate-speech'; 
 //const TTS_API_URL = 'http://localhost:8001/api/generate-speech'; 
+//const TTS_API_URL = 'https://dttorders.gangsheet-builders.com/api/generate-speech'; 
 
 
 // Función mejorada para limpiar texto antes de leer
